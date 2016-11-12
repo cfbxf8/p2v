@@ -29,6 +29,8 @@ class ParseGameJSON():
     def __init__(self, game):
         self.game = game
         self.plays = []
+        self._no_play = 'no_play'
+        self._no_play_events = {8, 12, 13}
         self._players = self._make_players_dict()
         self._current_players = self._players[0]
         self._parse_plays()
@@ -40,10 +42,9 @@ class ParseGameJSON():
         events = self.game['_playbyplay']['resultSets']['PlayByPlay']
         for event in events:
             play = self._parse_event(event)
-            if play == 'stop':
-                break
-            if play:
-                self.plays.append(play)
+            if play == self._no_play:
+                continue
+            self.plays.append(play)
 
     def _make_players_dict(self):
         """Makes dictionary of players on the court.
@@ -72,12 +73,10 @@ class ParseGameJSON():
         ----------
         event : dict
         """
-        if event['EVENTMSGTYPE'] == 12:
+        if event['EVENTMSGTYPE'] in self._no_play_events:
             self._current_players = self._players.get(event['EVENTNUM'],
                                                       self._current_players)
-        if event['EVENTMSGTYPE'] == 8:
-            stop = self._update_current_players(event)
-            return stop
+            return self._no_play
         event_list = [event['EVENTNUM']] + self._current_players[:]
         event_list.append(event['PCTIMESTRING'])
         event_list.append(event['EVENTMSGTYPE'])
