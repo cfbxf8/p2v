@@ -19,13 +19,20 @@ EVENT_DICT = {1: 'Field Goal',
 
 
 class ParseGameJSON():
+    """Class to parse json from single game from mongo.
+    """
     def __init__(self, game):
+        """
+        Parameters
+        ----------
+        game : dictionary
+        """
         self.game = game
         self.plays = []
         self._no_play = 'no_play'
         self._no_play_events = {8, 12, 13}
         self._players = self._make_players_dict()
-        self._current_players = self._players[0]
+        self._current_players = self._players.get(0, self._players.get(1, None))
         self._parse_plays()
 
     def _make_players_dict(self):
@@ -58,12 +65,15 @@ class ParseGameJSON():
             self.plays.append(play)
 
     def _parse_event(self, event):
-        """Turn an event dictionary into a list that's better for putting
-        in a dataframe.
+        """Turn event dictionary into a list.
 
         Parameters
         ----------
         event : dict
+
+        Returns
+        -------
+        list
         """
         if event['EVENTMSGTYPE'] in self._no_play_events:
             self._current_players = self._players.get(event['EVENTNUM'],
@@ -83,6 +93,10 @@ class ParseGameJSON():
 
     def to_df(self):
         """Turn parsed game json into a data frame.
+
+        Returns
+        -------
+        DataFrame
         """
         play_columns = ['event_num', 'home_p1_id', 'home_p1_name',
                         'home_p2_id', 'home_p2_name', 'home_p3_id',
@@ -129,7 +143,16 @@ def view_plays(game, only_event_type=None):
                 break
 
 
-if __name__ == '__main__':
-    client = MongoClient()
-    games_col = client.bball.games
-    test_game = games_col.find()[0]
+def make_plays_df():
+    """Connect to mongo, parse all games, turn into df.
+
+    Returns
+    -------
+    DataFrame
+    """
+    with MongoClient() as client:
+        games_col = client.bball.games
+        parsed_games = []
+        for game in games_col.find():
+            parsed_games.append(ParseGameJSON(game).to_df())
+    return pd.concat(parsed_games)
