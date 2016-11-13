@@ -1,4 +1,6 @@
 from pymongo import MongoClient
+import pandas as pd
+import json
 
 
 EVENT_DICT = {1: 'Field Goal',
@@ -26,17 +28,6 @@ class ParseGameJSON():
         self._current_players = self._players[0]
         self._parse_plays()
 
-    def _parse_plays(self):
-        """Turn a game dictionary in to a list of lists. Appends information
-        from game events to plays attribute.
-        """
-        events = self.game['_playbyplay']['resultSets']['PlayByPlay']
-        for event in events:
-            play = self._parse_event(event)
-            if play == self._no_play:
-                continue
-            self.plays.append(play)
-
     def _make_players_dict(self):
         """Makes dictionary of players on the court.
 
@@ -52,9 +43,19 @@ class ParseGameJSON():
             away_players = [p[attr] for p in matchup['away_players'][0]
                                     for attr in ['id', 'name']]
             return home_players + away_players
-        
-        return {matchup['start_id']: get_players(matchup)
-                                     for matchup in self.game['matchups']}
+
+        return {mu['start_id']: get_players(mu) for mu in self.game['matchups']}
+
+    def _parse_plays(self):
+        """Turn a game dictionary in to a list of lists. Appends information
+        from game events to plays attribute.
+        """
+        events = self.game['_playbyplay']['resultSets']['PlayByPlay']
+        for event in events:
+            play = self._parse_event(event)
+            if play == self._no_play:
+                continue
+            self.plays.append(play)
 
     def _parse_event(self, event):
         """Turn an event dictionary into a list that's better for putting
@@ -68,25 +69,32 @@ class ParseGameJSON():
             self._current_players = self._players.get(event['EVENTNUM'],
                                                       self._current_players)
             return self._no_play
+
         event_list = [event['EVENTNUM']] + self._current_players[:]
+        event_list.append(event['PERIOD'])
         event_list.append(event['PCTIMESTRING'])
         event_list.append(event['EVENTMSGTYPE'])
+        event_list.append(EVENT_DICT.get(event['EVENTMSGTYPE'], 'unknown_key'))
         event_list.extend([event['PLAYER1_ID'], event['PLAYER1_NAME']])
         event_list.extend([event['PLAYER2_ID'], event['PLAYER2_NAME']])
         event_list.append(event['HOMEDESCRIPTION'] if event['HOMEDESCRIPTION'] \
                                                    else event['VISITORDESCRIPTION'])
         return event_list
 
-    def _update_current_players(self, event):
-        """Turn an event dictionary into a list that's better for putting in a dataframe.
-
-        Parameters
-        ----------
-        event : dict
+    def to_df(self):
+        """Turn parsed game json into a data frame.
         """
-        player_1_idx = self._current_players.index(event['PLAYER1_ID'])
-        sub_player_info = event['PLAYER2_ID'], event['PLAYER2_NAME']
-        self._current_players[player_1_idx:player_1_idx+2] = sub_player_info
+        play_columns = ['event_num', 'home_p1_id', 'home_p1_name',
+                        'home_p2_id', 'home_p2_name', 'home_p3_id',
+                        'home_p3_name', 'home_p4_id', 'home_p4_name',
+                        'home_p5_id', 'home_p5_name', 'away_p1_id',
+                        'home_p1_name', 'home_p2_id', 'home_p2_name',
+                        'home_p3_id', 'home_p3_name', 'home_p4_id',
+                        'home_p4_name', 'home_p5_id', 'home_p5_name',
+                        'period', 'clock', 'event_num', 'event_type',
+                        'active_p1_id', 'active_p1_name', 'active_p2_id',
+                        'active_p2_name', 'play_description']
+        return pd.DataFrame(self.plays, columns=play_columns)
 
 
 def view_plays(game, only_event_type=None):
@@ -105,19 +113,18 @@ def view_plays(game, only_event_type=None):
         elif event['HOMEDESCRIPTION']:
             return event['HOMEDESCRIPTION']
         else:
-            return event['PCTIMESTRING']
+            return 'No description'
 
     events = game['_playbyplay']['resultSets']['PlayByPlay']
     for event in events:
         if not only_event_type or event['EVENTMSGTYPE'] == only_event_type:
             description = make_description(event)
-            print('{: <3} :: {: <70} Type = {: <2} Period = {}'.format(
-                   event['EVENTNUM'], description,
-                   event['EVENTMSGTYPE'], event['PERIOD']))
+            print('{: <3} :: {: <65} Type: {: <2} - Period: {} - Time: {}'
+                  .format(event['EVENTNUM'], description, event['EVENTMSGTYPE'],
+                          event['PERIOD'], event['PCTIMESTRING']))
             inpt = input()
             if inpt == 'i':
-                print(event)
-                print('\n')
+                print(json.dumps(event, indent=1, sort_keys=True))
             elif inpt == 'q':
                 break
 
